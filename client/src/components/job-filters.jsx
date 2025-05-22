@@ -15,12 +15,16 @@ export default function JobFilters({ onFiltersChange }) {
     remote: false,
   })
   const [isOpen, setIsOpen] = useState(false)
+  
   const skillsList = [
-    "JavaScript", "React", "TypeScript", "Node.js",
-    "Python", "AWS", "Docker", "UI/UX", "Figma"
+    "JavaScript", "React", "TypeScript", "Node.js", "Python", "Java",
+    "AWS", "Docker", "Kubernetes", "MongoDB", "PostgreSQL", "MySQL",
+    "UI/UX", "Figma", "Adobe", "Machine Learning", "Data Science",
+    "DevOps", "Backend", "Frontend", "Full Stack", "Angular", "Vue.js",
+    "Spring Boot", "Django", "Flask", "Express.js", "REST API", "GraphQL",
+    "Git", "Jenkins", "CI/CD", "Agile", "Scrum", "Project Management"
   ]
 
-  // Count each selected skill, plus remote and salary range as additional filters
   const getActiveFiltersCount = (filtersObj) => {
     let count = 0
     count += filtersObj.skills.length
@@ -87,16 +91,16 @@ export default function JobFilters({ onFiltersChange }) {
           </SheetHeader>
           <div className="py-4 space-y-6">
             <div>
-              <Label className="block mb-2 font-medium">Skills</Label>
-              <div className="flex flex-wrap gap-2">
+              <Label className="block mb-2 font-medium">Skills & Keywords</Label>
+              <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
                 {skillsList.map((skill) => (
                   <Badge
                     key={skill}
                     onClick={() => toggleArrayItem("skills", skill)}
-                    className={`cursor-pointer px-3 py-1 text-sm ${
+                    className={`cursor-pointer px-3 py-1 text-sm transition-colors ${
                       filters.skills.includes(skill)
                         ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
                     }`}
                   >
                     {skill}
@@ -115,8 +119,8 @@ export default function JobFilters({ onFiltersChange }) {
                 className="w-full"
               />
               <div className="flex justify-between text-xs mt-1">
-                <span>{filters.salaryRange[0]}</span>
-                <span>{filters.salaryRange[1]}</span>
+                <span>${filters.salaryRange[0]}k</span>
+                <span>${filters.salaryRange[1]}k</span>
               </div>
             </div>
             <div className="flex items-center gap-2">

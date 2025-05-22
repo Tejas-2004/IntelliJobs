@@ -1,6 +1,6 @@
-"use client"
-
-import { useState } from "react";
+"use client";
+import { useState, useEffect, useCallback } from "react";
+import { useUser } from "@clerk/nextjs";
 import { Bookmark, BookmarkCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -8,119 +8,105 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import JobDetailPanel from "@/components/job-detail-panel";
 
-// Sample job data
-const ALL_JOBS = [
-  {
-    id: 1,
-    title: "Senior Frontend Developer",
-    company: "TechCorp",
-    logo: "/placeholder.svg?height=40&width=40",
-    location: "Remote",
-    salary: "$120k - $150k",
-    tags: ["React", "TypeScript", "Next.js"],
-    relevancy: 95,
-    posted: "2 days ago",
-    description:
-      "TechCorp is seeking a Senior Frontend Developer to join our growing team. You will be responsible for building user interfaces for our web applications using React and TypeScript.",
-    responsibilities: [
-      "Develop new user-facing features using React.js",
-      "Build reusable components and libraries for future use",
-      "Translate designs and wireframes into high-quality code",
-      "Optimize components for maximum performance",
-      "Collaborate with backend developers and designers",
-    ],
-    requirements: [
-      "3+ years experience with React.js",
-      "Strong proficiency in TypeScript",
-      "Experience with Next.js and modern frontend tools",
-      "Knowledge of responsive design principles",
-      "Understanding of server-side rendering",
-    ],
-    benefits: [
-      "Competitive salary",
-      "Remote work options",
-      "Health insurance",
-      "401(k) matching",
-      "Professional development budget",
-    ],
-    companyInfo:
-      "TechCorp is a leading technology company specializing in web and mobile applications. We work with clients across various industries to deliver innovative solutions that drive business growth.",
-  },
-  {
-    id: 2,
-    title: "Full Stack Engineer",
-    company: "InnovateLabs",
-    logo: "/placeholder.svg?height=40&width=40",
-    location: "San Francisco, CA",
-    salary: "$130k - $160k",
-    tags: ["Node.js", "React", "MongoDB"],
-    relevancy: 88,
-    posted: "1 day ago",
-  },
-  {
-    id: 3,
-    title: "UX/UI Designer",
-    company: "DesignHub",
-    logo: "/placeholder.svg?height=40&width=40",
-    location: "New York, NY",
-    salary: "$90k - $120k",
-    tags: ["Figma", "UI Design", "User Research"],
-    relevancy: 82,
-    posted: "3 days ago",
-  },
-  {
-    id: 4,
-    title: "DevOps Engineer",
-    company: "CloudSystems",
-    logo: "/placeholder.svg?height=40&width=40",
-    location: "Remote",
-    salary: "$110k - $140k",
-    tags: ["AWS", "Docker", "Kubernetes"],
-    relevancy: 78,
-    posted: "5 days ago",
-  },
-  {
-    id: 5,
-    title: "Product Manager",
-    company: "ProductWave",
-    logo: "/placeholder.svg?height=40&width=40",
-    location: "London, UK",
-    salary: "$100k - $130k",
-    tags: ["Product Strategy", "Agile", "User Stories"],
-    relevancy: 75,
-    posted: "1 week ago",
-  },
-  {
-    id: 6,
-    title: "Data Scientist",
-    company: "DataInsights",
-    logo: "/placeholder.svg?height=40&width=40",
-    location: "Berlin, Germany",
-    salary: "$115k - $145k",
-    tags: ["Python", "Machine Learning", "SQL"],
-    relevancy: 72,
-    posted: "1 week ago",
-  },
-  
-];
-
-export default function JobList() {
+export default function JobList({ filters, onFiltersChange }) {
+  const { user } = useUser();
   const [savedJobs, setSavedJobs] = useState([]);
-  const [visibleJobs, setVisibleJobs] = useState(4);
   const [selectedJob, setSelectedJob] = useState(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [filteredJobs, setFilteredJobs] = useState(ALL_JOBS);
-  const [activeFilters, setActiveFilters] = useState(null);
+  const [jobs, setJobs] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const [error, setError] = useState(null);
+
+  const fetchJobs = useCallback(async (pageNum = 1, currentFilters = null, isNewSearch = false) => {
+    if (!user?.id) return;
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      let endpoint = `http://localhost:5000/api/recommended-jobs?userId=${user.id}&page=${pageNum}&limit=6`;
+      
+      const filtersToUse = currentFilters || filters;
+      if (filtersToUse) {
+        if (filtersToUse.skills && filtersToUse.skills.length > 0) {
+          endpoint += `&skills=${encodeURIComponent(filtersToUse.skills.join(','))}`;
+        }
+        if (filtersToUse.remote) {
+          endpoint += '&remote=true';
+        }
+        if (filtersToUse.salaryRange && (filtersToUse.salaryRange[0] > 50 || filtersToUse.salaryRange[1] < 150)) {
+          endpoint += `&minSalary=${filtersToUse.salaryRange[0]}&maxSalary=${filtersToUse.salaryRange[1]}`;
+        }
+      }
+      
+      const response = await fetch(endpoint);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (isNewSearch || pageNum === 1) {
+        setJobs(data.jobs || []);
+      } else {
+        setJobs(prev => [...prev, ...(data.jobs || [])]);
+      }
+      
+      setHasMore(data.hasMore || false);
+      setPage(pageNum);
+      
+    } catch (error) {
+      console.error('Error fetching recommended jobs:', error);
+      setError(error.message);
+      if (pageNum === 1) {
+        setJobs([]);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.id, filters]);
+
+  useEffect(() => {
+    if (user?.id) {
+      fetchJobs(1, filters, true);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.id && filters) {
+      setPage(1);
+      fetchJobs(1, filters, true);
+    }
+  }, [filters, user?.id]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.innerHeight + document.documentElement.scrollTop !== document.documentElement.offsetHeight || isLoading || !hasMore) {
+        return;
+      }
+      showMore();
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [isLoading, hasMore]);
 
   const toggleSave = (id, e) => {
-    e.stopPropagation(); // Prevent card click when clicking save button
+    e.stopPropagation();
     setSavedJobs((prev) =>
       prev.includes(id) ? prev.filter((jobId) => jobId !== id) : [...prev, id]
     );
   };
 
   const showMore = () => {
-    setVisibleJobs((prev) => Math.min(prev + 4, filteredJobs.length));
+    if (hasMore && !isLoading) {
+      const nextPage = page + 1;
+      fetchJobs(nextPage, filters, false);
+    }
   };
 
   const handleJobClick = (job) => {
@@ -132,128 +118,128 @@ export default function JobList() {
     setIsDetailOpen(false);
   };
 
-  const handleFiltersChange = (filters) => {
-    setActiveFilters(filters);
-
-    // Filter jobs based on selected criteria
-    let jobs = [...ALL_JOBS];
-
-    // Filter by skills/tags
-    if (filters.skills.length > 0) {
-      jobs = jobs.filter((job) =>
-        filters.skills.some((skill) => job.tags.includes(skill))
-      );
-    }
-
-    // Filter by salary range
-    if (filters.salaryRange[0] > 50 || filters.salaryRange[1] < 150) {
-      // For demo purposes, we'll just filter randomly
-      jobs = jobs.filter(() => Math.random() > 0.2);
-    }
-
-    // Filter by remote
-    if (filters.remote) {
-      jobs = jobs.filter((job) => job.location.includes("Remote"));
-    }
-
-    setFilteredJobs(jobs);
-    setVisibleJobs(4); // Reset visible jobs when filters change
-  };
+  if (error) {
+    return (
+      <div className="max-w-2xl w-full flex flex-col gap-4">
+        <div className="text-center py-8">
+          <p className="text-destructive text-sm mb-2">Error loading jobs</p>
+          <p className="text-xs text-muted-foreground mb-4">{error}</p>
+          <Button 
+            variant="outline" 
+            onClick={() => fetchJobs(1, filters, true)}
+            className="text-xs"
+          >
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Job Detail Panel */}
-      <JobDetailPanel job={selectedJob} isOpen={isDetailOpen} onClose={closeJobDetail} />
-
-      {filteredJobs.slice(0, visibleJobs).map((job) => (
-        <JobCard
-          key={job.id}
-          job={job}
-          isSaved={savedJobs.includes(job.id)}
-          onSave={(e) => toggleSave(job.id, e)}
+    <div className="max-w-2xl w-full flex flex-col gap-4">
+      {jobs.length === 0 && !isLoading && (
+        <div className="text-xs text-muted-foreground py-8 text-center">
+          No jobs match your resume profile or current filters. Try adjusting your criteria.
+        </div>
+      )}
+      
+      {jobs.map((job, index) => (
+        <Card
+          key={`${job.id}-${job.pinecone_id || ''}-${index}`}
+          className="cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => handleJobClick(job)}
-        />
+        >
+          <CardHeader className="flex flex-row items-center gap-3 py-3 px-4">
+            {/* Display company logo if available, otherwise show placeholder */}
+            {job.logo && job.logo !== '/placeholder.svg?height=40&width=40' ? (
+              <img 
+                src={job.logo} 
+                alt={job.company} 
+                className="w-7 h-7 rounded-full object-cover border"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
+              />
+            ) : null}
+            <Avatar 
+              src="/placeholder.svg?height=40&width=40"
+              alt={job.company} 
+              size={28}
+              style={{ display: job.logo && job.logo !== '/placeholder.svg?height=40&width=40' ? 'none' : 'flex' }}
+            />
+            <div className="flex flex-col">
+              <span className="font-medium text-sm">{job.title}</span>
+              <span className="text-xs text-muted-foreground">{job.company}</span>
+              {job.experience && (
+                <span className="text-xs text-muted-foreground">{job.experience}</span>
+              )}
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <Badge className="text-xs px-2 py-0.5">{job.location}</Badge>
+              {job.match_percentage && (
+                <Badge variant="secondary" className="text-xs px-2 py-0.5 bg-green-100 text-green-800">
+                  {job.match_percentage}% match
+                </Badge>
+              )}
+              {job.rating && job.rating > 0 && (
+                <Badge variant="outline" className="text-xs px-2 py-0.5">
+                  ⭐ {job.rating}
+                </Badge>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => toggleSave(job.id, e)}
+                aria-label={savedJobs.includes(job.id) ? "Unsave" : "Save"}
+              >
+                {savedJobs.includes(job.id) ? (
+                  <BookmarkCheck className="w-4 h-4 text-primary" />
+                ) : (
+                  <Bookmark className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="py-2 px-4">
+            <div className="flex flex-wrap gap-2">
+              {(job.tags || []).slice(0, 5).map((tag) => (
+                <Badge key={tag} variant="secondary" className="text-xs px-2 py-0.5">
+                  {tag}
+                </Badge>
+              ))}
+              {job.tags && job.tags.length > 5 && (
+                <Badge variant="outline" className="text-xs px-2 py-0.5">
+                  +{job.tags.length - 5} more
+                </Badge>
+              )}
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-between text-xs text-muted-foreground px-4 py-2">
+            <span>{job.salary}</span>
+            <span>{job.posted}</span>
+          </CardFooter>
+        </Card>
       ))}
-
-      {visibleJobs < filteredJobs.length && (
-        <Button variant="outline" className="w-full" onClick={showMore}>
+      
+      {isLoading && (
+        <div className="flex justify-center py-4">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+        </div>
+      )}
+      
+      {hasMore && !isLoading && jobs.length > 0 && (
+        <Button variant="outline" className="self-center mt-2 text-xs" onClick={showMore}>
           Show More
         </Button>
       )}
-
-      {filteredJobs.length === 0 && (
-        <div className="text-center py-8">
-          <p className="text-muted-foreground">No jobs match your filters. Try adjusting your criteria.</p>
-          <Button
-            variant="outline"
-            className="mt-4"
-            onClick={() =>
-              handleFiltersChange({
-                salaryRange: [50, 150],
-                skills: [],
-                remote: false,
-              })
-            }
-          >
-            Reset Filters
-          </Button>
-        </div>
-      )}
+      
+      <JobDetailPanel
+        job={selectedJob}
+        isOpen={isDetailOpen}
+        onClose={closeJobDetail}
+      />
     </div>
-  );
-}
-
-function JobCard({ job, isSaved, onSave, onClick }) {
-  return (
-    <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={onClick}>
-      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-        <div className="flex items-center space-x-4">
-          <Avatar className="h-10 w-10 rounded-md">
-            <img src={job.logo || "/placeholder.svg"} alt={`${job.company} logo`} />
-          </Avatar>
-          <div>
-            <h3 className="font-semibold">{job.title}</h3>
-            <p className="text-sm text-muted-foreground">{job.company}</p>
-          </div>
-        </div>
-        <Button variant="ghost" size="icon" onClick={onSave} className="h-8 w-8">
-          {isSaved ? <BookmarkCheck className="h-5 w-5 text-primary" /> : <Bookmark className="h-5 w-5" />}
-          <span className="sr-only">{isSaved ? "Unsave" : "Save"} job</span>
-        </Button>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              {job.location} • {job.salary}
-            </div>
-            <Badge variant="outline" className="bg-primary/10 text-primary">
-              {job.relevancy}% Match
-            </Badge>
-          </div>
-          <div className="flex flex-wrap gap-2 pt-2">
-            {job.tags.map((tag) => (
-              <Badge key={tag} variant="secondary" className="text-xs">
-                {tag}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      </CardContent>
-      <CardFooter className="border-t pt-4">
-        <div className="flex w-full items-center justify-between">
-          <span className="text-xs text-muted-foreground">Posted {job.posted}</span>
-          <Button
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              // This would normally open the apply dialog
-            }}
-          >
-            Apply Now
-          </Button>
-        </div>
-      </CardFooter>
-    </Card>
   );
 }
