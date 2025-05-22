@@ -2,6 +2,7 @@
 .vscode/
 client/node_modules/
 server/__pycache__/
+__pycache__/
 venv/
 .env
 # Logs
@@ -30,3 +31,5 @@ dist-ssr
 *.sw?
 
 .ipynb_checkpoints/
+
+server/uploads/

@@ -4,23 +4,24 @@ import json
 import redis
 import uuid
 import psycopg2
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 from datetime import datetime
 
+
 # Load environment variables
 load_dotenv()
 
-# Set up PostgreSQL connection
-pg_conn = psycopg2.connect(
-    host=os.getenv('PGHOST'),
-    database=os.getenv('PGDATABASE'),
-    user=os.getenv('PGUSER'),
-    password=os.getenv('PGPASSWORD')
-)
-pg_cursor = pg_conn.cursor()
+# Get the connection URL from environment variables
+POSTGRES_URL = os.getenv("POSTGRES_URL")
+# Create the connection
+pg_conn = psycopg2.connect(POSTGRES_URL, sslmode='require')
+# Create the cursor
+pg_cursor = pg_conn.cursor(cursor_factory=RealDictCursor)
+
 
 # Set up models and connections
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -198,7 +199,7 @@ def update_conversation_summary(conversation_id):
     """
     
     # Use Groq to generate the summary
-    client = Groq(api_key=os.getenv('groq_api'))
+    client = Groq(api_key=os.getenv('GROQ_API_KEY'))
     completion = client.chat.completions.create(
         model="llama3-70b-8192",
         messages=[
@@ -244,7 +245,7 @@ def generate_response(prompt, similar_jobs, conversation_id):
     if conversation_summary:
         context += f"\n\nConversation History Summary:\n{conversation_summary}"
     
-    client = Groq(api_key=os.getenv('groq_api'))
+    client = Groq(api_key=os.getenv('GROQ_API_KEY'))
     completion = client.chat.completions.create(
         model="llama3-70b-8192",
         messages=[
