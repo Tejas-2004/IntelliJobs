@@ -407,6 +407,118 @@ def get_recommended_jobs():
         import traceback
         traceback.print_exc()
         return jsonify({"error": "Failed to fetch recommended jobs", "details": str(e)}), 500
+    
+
+
+@app.route("/api/job-action", methods=["POST"])
+def job_action():
+    data = request.get_json()
+    user_id = data.get("userId")
+    job_id = str(data.get("jobId"))
+    action = data.get("action")  # 'save', 'unsave', 'apply', 'unapply'
+    action_type = data.get("type")  # 'saved' or 'applied'
+    if not all([user_id, job_id, action, action_type]):
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT jobstats FROM users WHERE user_id = %s", (user_id,))
+        user_data = cur.fetchone()
+        import json
+        if user_data and user_data['jobstats'] and user_data['jobstats'] != 'None':
+            jobstats = json.loads(user_data['jobstats'])
+        else:
+            jobstats = {"saved": [], "applied": []}
+        for key in ["saved", "applied"]:
+            if key not in jobstats:
+                jobstats[key] = []
+        # Only touch the requested list!
+        if action == "save" and job_id not in jobstats["saved"]:
+            jobstats["saved"].append(job_id)
+        elif action == "unsave" and job_id in jobstats["saved"]:
+            jobstats["saved"].remove(job_id)
+        elif action == "apply" and job_id not in jobstats["applied"]:
+            jobstats["applied"].append(job_id)
+        elif action == "unapply" and job_id in jobstats["applied"]:
+            jobstats["applied"].remove(job_id)
+        cur.execute("UPDATE users SET jobstats = %s WHERE user_id = %s", (json.dumps(jobstats), user_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({
+            "success": True,
+            "jobstats": jobstats,
+            "counts": {
+                "saved": len(jobstats["saved"]),
+                "applied": len(jobstats["applied"])
+            }
+        })
+    except Exception as e:
+        print(f"Error in job_action: {e}")
+        return jsonify({"error": "Database error", "details": str(e)}), 500
+
+@app.route("/api/user-job-actions", methods=["GET"])
+def get_user_job_actions():
+    user_id = request.args.get('userId')
+    if not user_id:
+        return jsonify({"error": "User ID is required"}), 400
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT jobstats FROM users WHERE user_id = %s", (user_id,))
+        user_data = cur.fetchone()
+        cur.close()
+        conn.close()
+        import json
+        if not user_data or not user_data['jobstats'] or user_data['jobstats'] == 'None':
+            return jsonify({"saved": [], "applied": []})
+        jobstats = json.loads(user_data['jobstats'])
+        return jsonify({
+            "saved": jobstats.get("saved", []),
+            "applied": jobstats.get("applied", [])
+        })
+    except Exception as e:
+        print(f"Error getting user job actions: {e}")
+        return jsonify({"error": "Database error", "details": str(e)}), 500
+
+@app.route("/api/job-stats", methods=["GET"])
+def get_job_stats():
+    user_id = request.args.get('userId')
+    if not user_id:
+        return jsonify({"error": "User ID is required"}), 400
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT jobstats FROM users WHERE user_id = %s", (user_id,))
+        user_data = cur.fetchone()
+        cur.close()
+        conn.close()
+        import json
+        if not user_data or not user_data['jobstats'] or user_data['jobstats'] == 'None':
+            return jsonify({"saved": 0, "applied": 0})
+        jobstats = json.loads(user_data['jobstats'])
+        return jsonify({
+            "saved": len(jobstats.get("saved", [])),
+            "applied": len(jobstats.get("applied", []))
+        })
+    except Exception as e:
+        print(f"Error getting job stats: {e}")
+        return jsonify({"error": "Database error", "details": str(e)}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # WebSocket connection handler
 @socketio.on('connect', namespace='/resume')

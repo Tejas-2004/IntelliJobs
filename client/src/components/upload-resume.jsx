@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Upload, CheckCircle, AlertCircle } from "lucide-react";
 import io from "socket.io-client";
 
-export default function UploadResume() {
+export default function UploadResume({ onUploadSuccess }) {
   const { user } = useUser();
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState(null); // 'uploading', 'processing', 'success', 'error'
+  const [uploadStatus, setUploadStatus] = useState(null);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(0);
 
@@ -30,6 +30,28 @@ export default function UploadResume() {
         setProgress(data.progress);
         if (data.progress >= 100) {
           setUploadStatus("success");
+          setIsUploading(false);
+          // Call the success callback to refresh job list
+          if (onUploadSuccess) {
+            onUploadSuccess();
+          }
+        }
+      }
+    });
+
+    socket.on("resume_processed", (data) => {
+      if (data.userId === user.id) {
+        if (data.success) {
+          setUploadStatus("success");
+          setIsUploading(false);
+          setProgress(100);
+          // Call the success callback to refresh job list
+          if (onUploadSuccess) {
+            onUploadSuccess();
+          }
+        } else {
+          setUploadStatus("error");
+          setError(data.error || "Processing failed. Please try again.");
           setIsUploading(false);
         }
       }
@@ -54,8 +76,9 @@ export default function UploadResume() {
       socket.off("resume_progress");
       socket.off("resume_error");
       socket.off("resume_processing");
+      socket.off("resume_processed");
     };
-  }, [user?.id]);
+  }, [user?.id, onUploadSuccess]);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -100,8 +123,10 @@ export default function UploadResume() {
         throw new Error("Failed to upload resume");
       }
 
+      // Don't set progress to 30% here, let the WebSocket handle all progress updates
       setUploadStatus("processing");
-      setProgress(30);
+      // Remove this line: setProgress(30);
+      
     } catch (error) {
       console.error("Error uploading resume:", error);
       setError("Failed to upload resume. Please try again.");
@@ -110,8 +135,9 @@ export default function UploadResume() {
     }
   };
 
+  // Rest of your component remains the same...
   return (
-    <div className="flex justify-center items-center min-h-screen bg-background">
+    <div className="flex justify-center items-center min-h-[60vh] bg-background">
       <Card className="w-full max-w-lg bg-card text-card-foreground border border-border rounded-lg shadow-lg">
         <CardHeader>
           <CardTitle className="text-center text-2xl font-bold">
@@ -184,7 +210,7 @@ export default function UploadResume() {
   );
 }
 
-// ProgressBar with percentage always inside and centered
+// ProgressBar component
 function ProgressBar({ progress }) {
   return (
     <div className="relative w-full h-6 bg-muted rounded-full overflow-hidden mt-2 mb-2">

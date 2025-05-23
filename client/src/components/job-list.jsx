@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
-import { Bookmark, BookmarkCheck } from "lucide-react";
+import { Bookmark, BookmarkCheck, Send, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import JobDetailPanel from "@/components/job-detail-panel";
 export default function JobList({ filters, onFiltersChange }) {
   const { user } = useUser();
   const [savedJobs, setSavedJobs] = useState([]);
+  const [appliedJobs, setAppliedJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [jobs, setJobs] = useState([]);
@@ -70,18 +71,42 @@ export default function JobList({ filters, onFiltersChange }) {
     }
   }, [user?.id, filters]);
 
+  // Fetch user's saved and applied jobs
+  const fetchUserJobStats = useCallback(async () => {
+    if (!user?.id) return;
+    
+    try {
+      const response = await fetch(`http://localhost:5000/api/user-job-actions?userId=${user.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setSavedJobs(data.saved || []);
+        setAppliedJobs(data.applied || []);
+      }
+    } catch (error) {
+      console.error('Error fetching user job actions:', error);
+    }
+  }, [user?.id]);
+
+  // Initial load - separate useEffect to avoid dependency issues
   useEffect(() => {
     if (user?.id) {
       fetchJobs(1, filters, true);
     }
-  }, [user?.id]);
+  }, [user?.id, fetchJobs]);
+
+  // Load user job stats - separate useEffect
+  useEffect(() => {
+    if (user?.id) {
+      fetchUserJobStats();
+    }
+  }, [user?.id, fetchUserJobStats]);
 
   useEffect(() => {
     if (user?.id && filters) {
       setPage(1);
       fetchJobs(1, filters, true);
     }
-  }, [filters, user?.id]);
+  }, [filters, user?.id, fetchJobs]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -95,12 +120,80 @@ export default function JobList({ filters, onFiltersChange }) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isLoading, hasMore]);
 
-  const toggleSave = (id, e) => {
+  const toggleSave = async (jobId, e) => {
     e.stopPropagation();
-    setSavedJobs((prev) =>
-      prev.includes(id) ? prev.filter((jobId) => jobId !== id) : [...prev, id]
-    );
+    
+    try {
+      const action = savedJobs.includes(jobId) ? 'unsave' : 'save';
+      const response = await fetch('http://localhost:5000/api/job-action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          jobId: jobId,
+          action: action,
+          type: 'saved'
+        }),
+      });
+  
+      if (response.ok) {
+        setSavedJobs(prev =>
+          action === 'save' 
+            ? [...prev, jobId]
+            : prev.filter(id => id !== jobId)
+        );
+        
+        // Dispatch custom event to update stats
+        console.log('Dispatching jobStatsUpdated event'); // Debug log
+        const event = new CustomEvent('jobStatsUpdated');
+        window.dispatchEvent(event);
+      } else {
+        console.error('Failed to save job:', response.status);
+      }
+    } catch (error) {
+      console.error('Error toggling save:', error);
+    }
   };
+  
+  const toggleApply = async (jobId, e) => {
+    e.stopPropagation();
+    
+    try {
+      const action = appliedJobs.includes(jobId) ? 'unapply' : 'apply';
+      const response = await fetch('http://localhost:5000/api/job-action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          jobId: jobId,
+          action: action,
+          type: 'applied'
+        }),
+      });
+  
+      if (response.ok) {
+        setAppliedJobs(prev =>
+          action === 'apply' 
+            ? [...prev, jobId]
+            : prev.filter(id => id !== jobId)
+        );
+        
+        // Dispatch custom event to update stats
+        console.log('Dispatching jobStatsUpdated event'); // Debug log
+        const event = new CustomEvent('jobStatsUpdated');
+        window.dispatchEvent(event);
+      } else {
+        console.error('Failed to apply to job:', response.status);
+      }
+    } catch (error) {
+      console.error('Error toggling apply:', error);
+    }
+  };
+  
 
   const showMore = () => {
     if (hasMore && !isLoading) {
@@ -151,12 +244,12 @@ export default function JobList({ filters, onFiltersChange }) {
           onClick={() => handleJobClick(job)}
         >
           <CardHeader className="flex flex-row items-center gap-3 py-3 px-4">
-            {/* Display company logo if available, otherwise show placeholder */}
             {job.logo && job.logo !== '/placeholder.svg?height=40&width=40' ? (
               <img 
                 src={job.logo} 
                 alt={job.company} 
-                className="w-7 h-7 rounded-full object-cover border"
+                className="w-auto h-auto max-w-[28px] max-h-[28px] rounded-full object-cover border"
+                style={{ aspectRatio: '1/1' }}
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'flex';
@@ -188,6 +281,23 @@ export default function JobList({ filters, onFiltersChange }) {
                   ⭐ {job.rating}
                 </Badge>
               )}
+              
+              {/* Apply Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => toggleApply(job.id, e)}
+                aria-label={appliedJobs.includes(job.id) ? "Applied" : "Apply"}
+                className={appliedJobs.includes(job.id) ? "text-green-600" : ""}
+              >
+                {appliedJobs.includes(job.id) ? (
+                  <CheckCircle className="w-4 h-4" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+              </Button>
+
+              {/* Save Button */}
               <Button
                 variant="ghost"
                 size="icon"
